@@ -1,50 +1,108 @@
 require("dotenv").config();
-// const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const express = require("express");
 const cors = require("cors");
-// const jwt = require("jsonwebtoken");
-// const cookieParser = require("cookie-parser");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const { Server } = require("socket.io");
+const http = require("http");
+
 const port = process.env.PORT || 5000;
 const app = express();
+const server = http.createServer(app);
 
-app.use(cors())
+app.use(cors());
 app.use(express.json());
-// app.use(cookieParser());
 
-// NL9CDFitG6LTvPKc
+const uri = `mongodb+srv://${process.env.USER_NAME}:${process.env.USER_PASS}@cluster0.tui29.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
-
-const { MongoClient, ServerApiVersion } = require('mongodb');
-const uri = `mongodb+srv://${process.env.USER_NAME}:${process}@cluster0.tui29.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0;
-
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
     strict: true,
     deprecationErrors: true,
-  }
+  },
 });
 
 async function run() {
   try {
-    // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
-    
-    // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
-  } finally {
-    // Ensures that the client will close when you finish/error
-    // await client.close();
+    console.log("Connected to MongoDB");
+
+    const db = client.db("task-management");
+    const usersCollection = db.collection("users");
+    const tasksCollection = db.collection("tasks");
+
+    // WebSocket Server
+    const io = new Server(server, {
+      cors: {
+        origin: "http://localhost:5173",
+        origin: "*",
+        methods: ["GET", "POST"],
+      },
+    });
+
+    io.on("connection", (socket) => {
+      console.log("User connected:", socket.id);
+
+      socket.on("getTasks", async () => {
+        const tasks = await tasksCollection.find().toArray();
+        const categorizedTasks = { todo: [], inProgress: [], done: [] };
+        tasks.forEach((task) => categorizedTasks[task.category].push(task));
+        socket.emit("loadTasks", categorizedTasks);
+      });
+
+      socket.on("addTask", async ({ category, task }) => {
+        await tasksCollection.insertOne({ ...task, category });
+        io.emit("getTasks");
+      });
+
+      socket.on("updateTask", async ({ taskId, newTitle }) => {
+        await tasksCollection.updateOne(
+          { _id: new ObjectId(taskId) },
+          { $set: { title: newTitle } }
+        );
+        io.emit("getTasks");
+      });
+
+      socket.on("deleteTask", async ({ taskId }) => {
+        await tasksCollection.deleteOne({ _id: new ObjectId(taskId) });
+        io.emit("getTasks");
+      });
+
+      socket.on("moveTask", async ({ taskId, destinationCategory }) => {
+        await tasksCollection.updateOne(
+          { _id: new ObjectId(taskId) },
+          { $set: { category: destinationCategory } }
+        );
+        io.emit("getTasks");
+      });
+
+      socket.on("disconnect", () => {
+        console.log("User disconnected:", socket.id);
+      });
+    });
+
+    // REST API Endpoints
+    app.post("/users", async (req, res) => {
+      const newUser = req.body;
+      const result = await usersCollection.insertOne(newUser);
+      res.send(result);
+    });
+
+    app.get("/users", async (req, res) => {
+      const users = await usersCollection.find().toArray();
+      res.send(users);
+    });
+
+  } catch (error) {
+    console.error("Error:", error);
   }
 }
 run().catch(console.dir);
 
-app.get('/',(res,req)=>{
-    res.send('this is task management website');
+app.get("/", (req, res) => {
+  res.send("Task Management App is running");
 });
 
-app.listen(port,(req,res)=>{
-    console.log(`this site is running from : ${port}`);
+server.listen(port, () => {
+  console.log(`Server running on port: ${port}`);
 });
