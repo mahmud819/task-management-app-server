@@ -12,7 +12,8 @@ const server = http.createServer(app);
 app.use(cors());
 app.use(express.json());
 
-const uri = `mongodb+srv://${process.env.USER_NAME}:${process.env.USER_PASS}@cluster0.tui29.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+// const uri = `mongodb+srv://${process.env.USER_NAME}:${process.env.USER_PASS}@cluster0.tui29.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+const uri = process.env.MONGO_URL;
 
 const client = new MongoClient(uri, {
   serverApi: {
@@ -34,8 +35,8 @@ async function run() {
     // WebSocket Server
     const io = new Server(server, {
       cors: {
-        origin: "http://localhost:5173",
         origin: "*",
+        origin: "http://localhost:5173",
         methods: ["GET", "POST"],
       },
     });
